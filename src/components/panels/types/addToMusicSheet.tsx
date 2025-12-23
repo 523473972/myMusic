@@ -17,12 +17,16 @@ interface IAddToMusicSheetProps {
     musicItem: IMusic.IMusicItem | IMusic.IMusicItem[];
     // 如果是新建歌单，可以传入一个默认的名称
     newSheetDefaultName?: string;
+    // 远程歌单来源URL（用于刷新同步）
+    sourceUrl?: string;
+    // 远程歌单来源插件名称
+    sourcePluginName?: string;
 }
 
 export default function AddToMusicSheet(props: IAddToMusicSheetProps) {
     const sheets = useSheetsBase();
 
-    const { musicItem = [], newSheetDefaultName } = props ?? {};
+    const { musicItem = [], newSheetDefaultName, sourceUrl, sourcePluginName } = props ?? {};
     const safeAreaInsets = useSafeAreaInsets();
     const { t } = useI18N();
 
@@ -52,6 +56,9 @@ export default function AddToMusicSheet(props: IAddToMusicSheetProps) {
                                     onPress={() => {
                                         showPanel("CreateMusicSheet", {
                                             defaultName: newSheetDefaultName,
+                                            // 传递来源信息
+                                            sourceUrl,
+                                            sourcePluginName,
                                             async onSheetCreated(sheetId) {
                                                 try {
                                                     await MusicSheet.addMusic(
@@ -71,6 +78,8 @@ export default function AddToMusicSheet(props: IAddToMusicSheetProps) {
                                                 showPanel("AddToMusicSheet", {
                                                     musicItem: musicItem,
                                                     newSheetDefaultName,
+                                                    sourceUrl,
+                                                    sourcePluginName,
                                                 });
                                             },
                                         });

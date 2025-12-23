@@ -15,12 +15,16 @@ interface ICreateMusicSheetProps {
     defaultName?: string;
     onSheetCreated?: (sheetId: string) => void;
     onCancel?: () => void;
+    // 远程歌单来源URL（用于刷新同步）
+    sourceUrl?: string;
+    // 远程歌单来源插件名称
+    sourcePluginName?: string;
 }
 
 export default function CreateMusicSheet(props: ICreateMusicSheetProps) {
     const { t } = useI18N();
 
-    const { onSheetCreated, onCancel, defaultName = t("panel.createMusicSheet.title") } = props;
+    const { onSheetCreated, onCancel, defaultName = t("panel.createMusicSheet.title"), sourceUrl, sourcePluginName } = props;
 
     const [input, setInput] = useState("");
     const colors = useColors();
@@ -39,6 +43,10 @@ export default function CreateMusicSheet(props: ICreateMusicSheetProps) {
                         onOk={async () => {
                             const sheetId = await MusicSheet.addSheet(
                                 input || defaultName,
+                                {
+                                    sourceUrl,
+                                    sourcePluginName,
+                                }
                             );
                             onSheetCreated?.(sheetId);
                             hidePanel();

@@ -14,6 +14,10 @@ declare namespace IMusic {
         /** 作品总数 */
         worksNum?: number;
         platform: string;
+        /** 远程歌单来源URL（用于刷新同步） */
+        sourceUrl?: string;
+        /** 远程歌单来源插件名称 */
+        sourcePluginName?: string;
         [k: string]: any;
     }
     /** 歌单项 */

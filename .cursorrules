@@ -1,0 +1,519 @@
+# MusicFree 项目 AI 开发提示词
+
+## 项目概述
+
+MusicFree 是一个**插件化、定制化、无广告**的免费音乐播放器，基于 React Native 开发，目前支持 Android 和 Harmony OS 平台。项目采用 AGPL 3.0 协议开源。
+
+### 核心特性
+- **插件化架构**: 所有音源、搜索、播放功能通过插件实现
+- **主题定制**: 支持深色/浅色模式和自定义主题
+- **歌词关联**: 支持歌词关联功能
+- **离线支持**: 支持下载和本地音乐播放
+
+---
+
+## 技术栈
+
+### 核心框架
+| 技术 | 版本 | 用途 |
+|------|------|------|
+| React Native | 0.76.5 | 跨平台移动开发框架 |
+| TypeScript | ^5.3.3 | 类型安全 |
+| Expo | ^52.0.0 | 部分原生模块（文件系统、文档选择器等） |
+
+### 状态管理
+| 技术 | 用途 |
+|------|------|
+| **Jotai** | 主要状态管理方案（atom + useAtomValue） |
+| **MMKV** | 高性能持久化存储（配置、缓存） |
+| **GlobalState** | 自定义简易全局状态（用于Dialogs/Panels等UI状态） |
+
+### 导航与路由
+- **@react-navigation/native** v6 - 导航容器
+- **@react-navigation/native-stack** - 原生栈导航
+- **@react-navigation/drawer** - 抽屉导航
+
+### 音频播放
+- **react-native-track-player** v4.1.1 - 音乐播放核心
+
+### UI 相关
+| 技术 | 用途 |
+|------|------|
+| react-native-reanimated | 高性能动画 |
+| react-native-gesture-handler | 手势处理 |
+| @shopify/flash-list | 高性能列表 |
+| recyclerlistview | 回收列表视图 |
+| react-native-fast-image | 图片缓存与加载 |
+| react-native-svg | SVG图标支持 |
+| react-native-linear-gradient | 渐变背景 |
+
+### 网络与数据
+| 技术 | 用途 |
+|------|------|
+| axios | HTTP 请求 |
+| cheerio | HTML解析（用于插件） |
+| crypto-js | 加密算法 |
+| webdav | WebDAV 同步 |
+| immer | 不可变数据更新 |
+| eventemitter3 | 事件发布/订阅 |
+
+### 开发工具
+| 工具 | 用途 |
+|------|------|
+| ESLint | 代码检查 |
+| Prettier | 代码格式化 |
+| Husky | Git Hooks |
+| lint-staged | 暂存文件检查 |
+| commitlint | 提交信息规范 |
+
+---
+
+## 项目架构
+
+### 目录结构
+
+```
+src/
+├── assets/                 # 静态资源
+│   ├── icons/             # SVG 图标
+│   └── imgs/              # 图片资源
+├── components/            # 可复用组件
+│   ├── base/              # 基础组件（Button, Input, ThemeText等）
+│   ├── dialogs/           # 对话框组件
+│   ├── panels/            # 面板组件（底部弹出面板）
+│   ├── musicBar/          # 底部音乐播放栏
+│   ├── musicList/         # 音乐列表组件
+│   └── mediaItem/         # 媒体项组件
+├── constants/             # 常量定义
+│   ├── pathConst.ts       # 路径常量
+│   ├── uiConst.ts         # UI 尺寸常量
+│   ├── globalStyle.ts     # 全局样式
+│   └── repeatModeConst.ts # 播放模式常量
+├── core/                  # 核心业务逻辑
+│   ├── appConfig.ts       # 应用配置管理
+│   ├── pluginManager/     # 插件管理器
+│   ├── trackPlayer/       # 音乐播放器封装
+│   ├── musicSheet/        # 歌单管理
+│   ├── lyricManager.ts    # 歌词管理
+│   ├── downloader.ts      # 下载器
+│   ├── theme.ts           # 主题管理
+│   ├── router/            # 路由配置
+│   └── i18n/              # 国际化
+├── hooks/                 # 自定义 Hooks
+├── pages/                 # 页面组件
+│   ├── home/              # 首页
+│   ├── musicDetail/       # 音乐详情/播放页
+│   ├── searchPage/        # 搜索页
+│   ├── setting/           # 设置页
+│   └── ...
+├── types/                 # TypeScript 类型定义
+│   ├── music.d.ts         # 音乐相关类型
+│   ├── plugin.d.ts        # 插件类型
+│   └── core/              # 核心模块接口定义
+├── utils/                 # 工具函数
+│   ├── rpx.ts             # 响应式单位转换
+│   ├── stateMapper.ts     # 状态映射工具
+│   ├── storage.ts         # 存储工具
+│   └── ...
+├── entry/                 # 应用入口
+│   ├── index.tsx          # 主入口组件
+│   └── bootstrap/         # 应用启动逻辑
+└── native/                # 原生模块封装
+```
+
+### 核心架构模式
+
+#### 1. 依赖注入模式
+核心服务之间通过 `injectDependencies` 方法进行依赖注入：
+
+```typescript
+// 在 bootstrap.ts 中注入依赖
+PluginManager.injectDependencies(Config);
+TrackPlayer.injectDependencies(Config, musicHistory, PluginManager);
+downloader.injectDependencies(Config, PluginManager);
+lyricManager.injectDependencies(TrackPlayer, Config, PluginManager);
+```
+
+#### 2. 插件化架构
+- 插件是 CommonJS 模块，定义了搜索、播放、获取歌词等方法
+- 插件管理器负责安装、卸载、更新插件
+- 通过 `getByMedia`、`getByName` 等方法获取对应插件
+
+#### 3. 状态管理策略
+
+**Jotai（推荐）- 用于复杂状态**：
+```typescript
+// 定义 atom
+const currentMusicAtom = atom<IMusic.IMusicItem | null>(null);
+const playListAtom = atom<IMusic.IMusicItem[]>([]);
+
+// 在组件中使用
+export const useCurrentMusic = () => useAtomValue(currentMusicAtom);
+
+// 在服务类中使用
+getDefaultStore().set(currentMusicAtom, musicItem);
+getDefaultStore().get(currentMusicAtom);
+```
+
+**GlobalState - 用于简单UI状态**：
+```typescript
+// 定义
+export const dialogInfoStore = new GlobalState<IDialogInfo>({
+    name: null,
+    payload: null,
+});
+
+// 组件中使用
+const panelInfoState = panelInfoStore.useValue();
+
+// 命令式更新
+dialogInfoStore.setValue({ name: 'SimpleDialog', payload: {...} });
+```
+
+**MMKV - 用于持久化**：
+```typescript
+const configStore = getOrCreateMMKV("App.config");
+configStore.set(key, JSON.stringify(value));
+const value = JSON.parse(configStore.getString(key));
+```
+
+---
+
+## 代码规范
+
+### 命名规范
+- **文件名**: 小驼峰（如 `appConfig.ts`）或大驼峰（组件文件如 `ThemeText.tsx`）
+- **目录名**: 小驼峰（如 `trackPlayer/`）
+- **组件名**: 大驼峰（如 `MusicBar`）
+- **函数名**: 小驼峰（如 `getMediaSource`）
+- **常量**: 小驼峰或大写下划线（如 `pathConst` 或 `ROUTE_PATH`）
+- **接口**: I 前缀 + 大驼峰（如 `IMusic.IMusicItem`）
+- **类型命名空间**: 大写 I 开头（如 `IMusic`、`IPlugin`）
+
+### TypeScript 规范
+
+**类型定义使用命名空间**：
+```typescript
+// music.d.ts
+declare namespace IMusic {
+    export interface IMusicItem {
+        id: string;
+        platform: string;
+        artist: string;
+        title: string;
+        duration: number;
+        album: string;
+        artwork: string;
+        // ...
+    }
+
+    export type IQualityKey = "low" | "standard" | "high" | "super";
+}
+```
+
+**接口定义放在 types/core/ 目录**：
+```typescript
+// types/core/config.d.ts
+export interface IAppConfig {
+    setup(): Promise<void>;
+    setConfig<K extends keyof T>(key: K, value?: T[K]): void;
+    getConfig<K extends keyof T>(key: K): T[K] | undefined;
+}
+```
+
+### 组件规范
+
+**函数组件 + Hooks**：
+```typescript
+import React from "react";
+import { StyleSheet, View } from "react-native";
+import useColors from "@/hooks/useColors";
+import ThemeText from "@/components/base/themeText";
+
+interface IComponentProps {
+    title: string;
+    onPress?: () => void;
+}
+
+export default function MyComponent(props: IComponentProps) {
+    const { title, onPress } = props;
+    const colors = useColors();
+
+    return (
+        <View style={styles.container}>
+            <ThemeText>{title}</ThemeText>
+        </View>
+    );
+}
+
+const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+    },
+});
+```
+
+**复合组件模式**：
+```typescript
+// ListItem 组件
+ListItem.Size = Size;
+ListItem.ListItemIcon = ListItemIcon;
+ListItem.ListItemImage = ListItemImage;
+ListItem.ListItemText = ListItemText;
+ListItem.Content = Content;
+
+export default ListItem;
+
+// 使用
+<ListItem>
+    <ListItem.ListItemImage uri={artwork} />
+    <ListItem.Content title={title} description={artist} />
+    <ListItem.ListItemIcon icon="more-vertical" />
+</ListItem>
+```
+
+### 样式规范
+
+**响应式设计使用 rpx**：
+```typescript
+import rpx from "@/utils/rpx";
+
+const styles = StyleSheet.create({
+    container: {
+        padding: rpx(24),        // 设计稿24px
+        fontSize: rpx(28),       // 设计稿28px
+        borderRadius: rpx(16),   // 设计稿16px
+    },
+});
+```
+
+**主题化颜色使用 useColors**：
+```typescript
+import useColors from "@/hooks/useColors";
+
+function MyComponent() {
+    const colors = useColors();
+
+    return (
+        <View style={{ backgroundColor: colors.card }}>
+            <ThemeText fontColor="textSecondary">描述文字</ThemeText>
+        </View>
+    );
+}
+```
+
+**预定义字体大小**：
+```typescript
+import { fontSizeConst } from "@/constants/uiConst";
+
+// 可用的字体大小
+// tag: rpx(20)
+// description: rpx(22)
+// subTitle: rpx(26)
+// content: rpx(28) - 默认
+// title: rpx(32)
+// appbar: rpx(36)
+
+<ThemeText fontSize="title">标题</ThemeText>
+<ThemeText fontSize="description" fontColor="textSecondary">描述</ThemeText>
+```
+
+### 路径别名
+使用 `@/` 作为 `src/` 目录的别名：
+```typescript
+import Config from "@/core/appConfig";
+import useColors from "@/hooks/useColors";
+import ThemeText from "@/components/base/themeText";
+```
+
+### 注释规范
+- 使用**中文注释**
+- 重要函数添加 JSDoc 注释
+- 复杂逻辑添加行内注释
+
+```typescript
+/**
+ * 获取当前播放列表中指定位置的音乐
+ * @param index - 音乐在播放列表中的索引
+ * @returns 音乐项或null（列表为空时）
+ */
+getPlayListMusicAt(index: number): IMusic.IMusicItem | null {
+    const playList = this.playList;
+    const len = playList.length;
+    if (len === 0) {
+        return null;
+    }
+    // 支持负数索引，实现循环
+    return playList[(index + len) % len];
+}
+```
+
+---
+
+## 核心模块使用指南
+
+### 音乐播放 (TrackPlayer)
+
+```typescript
+import TrackPlayer, {
+    useCurrentMusic,
+    usePlayList,
+    useMusicState
+} from "@/core/trackPlayer";
+
+// 播放音乐
+await TrackPlayer.play(musicItem);
+
+// 暂停
+await TrackPlayer.pause();
+
+// 上一首/下一首
+await TrackPlayer.skipToPrevious();
+await TrackPlayer.skipToNext();
+
+// 添加到播放列表
+TrackPlayer.add(musicItem);
+TrackPlayer.addNext(musicItem); // 添加到下一首
+
+// 在组件中使用 hooks
+const currentMusic = useCurrentMusic();
+const playList = usePlayList();
+const musicState = useMusicState();
+```
+
+### 插件管理 (PluginManager)
+
+```typescript
+import PluginManager, { usePlugins } from "@/core/pluginManager";
+
+// 安装插件
+await PluginManager.installPluginFromUrl(url);
+await PluginManager.installPluginFromLocalFile(path);
+
+// 获取插件
+const plugin = PluginManager.getByMedia(musicItem);
+const plugin = PluginManager.getByName("pluginName");
+
+// 使用插件方法
+const source = await plugin?.methods.getMediaSource(musicItem, "standard");
+const searchResult = await plugin?.methods.search(keyword, 1, "music");
+
+// 获取可搜索的插件
+const plugins = PluginManager.getSearchablePlugins("music");
+```
+
+### 配置管理 (AppConfig)
+
+```typescript
+import Config, { useAppConfig } from "@/core/appConfig";
+
+// 获取配置
+const maxCacheSize = Config.getConfig("basic.maxCacheSize");
+
+// 设置配置
+Config.setConfig("basic.autoPlayWhenAppStart", true);
+
+// 在组件中使用 hook
+const autoPlay = useAppConfig("basic.autoPlayWhenAppStart");
+```
+
+### 对话框与面板
+
+```typescript
+// 对话框
+import { showDialog, hideDialog } from "@/components/dialogs/useDialog";
+
+showDialog("SimpleDialog", {
+    title: "提示",
+    content: "这是一条消息",
+});
+
+// 面板
+import { showPanel, hidePanel } from "@/components/panels/usePanel";
+
+showPanel("PlayList"); // 显示播放列表面板
+```
+
+### Toast 提示
+
+```typescript
+import Toast from "@/utils/toast";
+
+Toast.success("操作成功");
+Toast.warn("警告信息");
+```
+
+---
+
+## 新增功能开发指南
+
+### 添加新页面
+
+1. 在 `src/pages/` 下创建页面目录和组件
+2. 在 `src/core/router/index.ts` 添加路由路径常量
+3. 在 `src/core/router/routes.tsx` 注册路由
+
+```typescript
+// 1. pages/myPage/index.tsx
+export default function MyPage() {
+    return <View>...</View>;
+}
+
+// 2. core/router/index.ts
+export const ROUTE_PATH = {
+    // ...
+    MY_PAGE: "my-page",
+};
+
+// 3. core/router/routes.tsx
+import MyPage from "@/pages/myPage";
+
+export const routes = [
+    // ...
+    { path: ROUTE_PATH.MY_PAGE, component: MyPage },
+];
+```
+
+### 添加新的基础组件
+
+1. 在 `src/components/base/` 创建组件文件
+2. 遵循现有组件的样式和 Props 命名规范
+3. 使用 `useColors` 获取主题颜色
+4. 使用 `rpx` 进行响应式设计
+
+### 添加新的 Hook
+
+1. 在 `src/hooks/` 创建 hook 文件
+2. 命名以 `use` 开头
+3. 遵循 React Hooks 规范
+
+---
+
+## 注意事项
+
+1. **不要直接修改状态**，使用 immer 的 `produce` 或直接创建新对象
+2. **异步操作要处理错误**，使用 try-catch 并调用 `errorLog` 记录
+3. **大列表使用 FlashList**，避免性能问题
+4. **图片使用 FastImage**，支持缓存
+5. **避免内联样式**，使用 StyleSheet.create
+6. **测试移动网络场景**，检查 `useCelluarNetworkPlay` 配置
+7. **插件调用要判空**，插件方法可能不存在
+
+---
+
+## 调试
+
+```typescript
+import { trace, errorLog, devLog } from "@/utils/log";
+
+trace("调试信息", data);
+errorLog("错误信息", error);
+devLog("开发日志", "tag", data);
+```
+
+配置开启调试日志：
+- `debug.errorLog`: 错误日志
+- `debug.traceLog`: 追踪日志
+- `debug.devLog`: 开发日志
+
+

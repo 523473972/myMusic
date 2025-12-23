@@ -66,11 +66,14 @@ export default function ImportMusicSheet() {
                                                                         {
                                                                             musicItem:
                                                                                 result,
+                                                                            // 传递来源信息，用于后续刷新同步
+                                                                            sourceUrl: text,
+                                                                            sourcePluginName: plugin.name,
                                                                         },
                                                                     );
                                                                 },
                                                             },
-                                                        );                                                    
+                                                        );
                                                     } else {
                                                         Toast.warn(
                                                             t("panel.importMusicSheet.invalidLink"),

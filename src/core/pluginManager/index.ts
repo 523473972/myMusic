@@ -28,6 +28,7 @@ import { safeParse } from "@/utils/jsonUtil";
 import { IInjectable } from "@/types/infra";
 import { IAppConfig } from "@/types/core/config";
 import delay from "@/utils/delay";
+import { copyFileAssets, existsAssets, readDirAssets } from "react-native-fs";
 
 const pluginsAtom = atom<Plugin[]>([]);
 const pluginCacheStore = getOrCreateMMKV("plugin.cache");
@@ -88,6 +89,78 @@ class PluginManager implements IPluginManager, IInjectable {
     }
 
     /**
+     * 从 assets 目录安装内置插件
+     * 检查 assets/plugins 目录下的插件，如果插件目录中不存在则复制安装
+     */
+    private async installBuiltInPlugins() {
+        try {
+            // 检查 assets/plugins 目录是否存在
+            const assetsPluginPath = "plugins";
+            const hasAssetsPlugins = await existsAssets(assetsPluginPath);
+
+            if (!hasAssetsPlugins) {
+                trace("没有内置插件目录");
+                return;
+            }
+
+            // 读取 assets/plugins 目录下的所有文件
+            const assetPluginFiles = await readDirAssets(assetsPluginPath);
+
+            // 读取已安装的插件列表
+            const installedPluginFiles = await readDir(pathConst.pluginPath);
+            const installedPluginPlatforms = new Set<string>();
+
+            // 获取已安装插件的 platform 名称
+            for (const file of installedPluginFiles) {
+                if (file.isFile() && file.name?.endsWith?.(".js")) {
+                    try {
+                        const code = await readFile(file.path, "utf8");
+                        // 匹配 platform 字段
+                        const platformMatch = code.match(/platform:\s*["']([^"']+)["']/);
+                        if (platformMatch) {
+                            installedPluginPlatforms.add(platformMatch[1]);
+                        }
+                    } catch {}
+                }
+            }
+
+            // 复制未安装的内置插件
+            for (const assetFile of assetPluginFiles) {
+                if (assetFile.name?.endsWith?.(".js")) {
+                    try {
+                        // 先复制到临时位置读取 platform
+                        const tempPath = `${pathConst.pluginPath}_temp_${assetFile.name}`;
+                        await copyFileAssets(
+                            `${assetsPluginPath}/${assetFile.name}`,
+                            tempPath
+                        );
+
+                        const code = await readFile(tempPath, "utf8");
+                        const platformMatch = code.match(/platform:\s*["']([^"']+)["']/);
+                        const pluginPlatform = platformMatch ? platformMatch[1] : assetFile.name.replace(/\.js$/, "");
+
+                        if (!installedPluginPlatforms.has(pluginPlatform)) {
+                            // 重命名临时文件为正式文件
+                            const destPath = `${pathConst.pluginPath}${nanoid()}.js`;
+                            await copyFile(tempPath, destPath);
+                            await unlink(tempPath);
+                            trace("内置插件安装成功", pluginPlatform);
+                        } else {
+                            // 删除临时文件
+                            await unlink(tempPath);
+                            trace("内置插件已存在，跳过", pluginPlatform);
+                        }
+                    } catch (e: any) {
+                        errorLog("处理内置插件失败: " + assetFile.name, e?.message);
+                    }
+                }
+            }
+        } catch (e: any) {
+            errorLog("安装内置插件失败", e?.message);
+        }
+    }
+
+    /**
      * 初始化插件管理器，从文件系统加载所有插件
      * 读取插件目录中的所有.js文件并创建插件实例
      * @throws 如果插件初始化失败则抛出异常
@@ -95,6 +168,10 @@ class PluginManager implements IPluginManager, IInjectable {
     async setup() {
         try {
             await pluginMeta.migratePluginMeta();
+
+            // 安装内置插件
+            await this.installBuiltInPlugins();
+
             // 加载插件
             const pluginsFileItems = await readDir(pathConst.pluginPath);
             const allPlugins: Array<Plugin> = [];

@@ -4,21 +4,59 @@ import { showPanel } from "@/components/panels/usePanel.ts";
 import { SortType } from "@/constants/commonConst.ts";
 import { useI18N } from "@/core/i18n";
 import MusicSheet, { useSheetItem } from "@/core/musicSheet";
+import PluginManager from "@/core/pluginManager";
 import { ROUTE_PATH, useParams } from "@/core/router";
 import { default as Toast, default as toast } from "@/utils/toast";
 import { useNavigation } from "@react-navigation/native";
-import React from "react";
+import React, { useState } from "react";
 
 export default function () {
     const navigation = useNavigation<any>();
     const { id = "favorite" } = useParams<"local-sheet-detail">();
     const musicSheet = useSheetItem(id);
     const { t } = useI18N();
+    const [isRefreshing, setIsRefreshing] = useState(false);
+
+    // 检查歌单是否支持刷新
+    const canRefresh = MusicSheet.canRefreshSheet(id);
 
     return (
         <>
             <AppBar
                 menu={[
+                    {
+                        icon: "arrow-path",
+                        title: t("sheetDetail.refreshSheet"),
+                        show: canRefresh,
+                        async onPress() {
+                            if (isRefreshing) {
+                                Toast.warn(t("sheetDetail.refreshing"));
+                                return;
+                            }
+                            setIsRefreshing(true);
+                            Toast.success(t("sheetDetail.refreshing"));
+                            try {
+                                const result = await MusicSheet.refreshSheet(id, PluginManager);
+                                if (result.success) {
+                                    if (result.added > 0) {
+                                        Toast.success(t("sheetDetail.refreshSuccess", { count: result.added }));
+                                    } else {
+                                        Toast.success(t("sheetDetail.refreshNoNew"));
+                                    }
+                                } else {
+                                    // 根据错误码显示对应的国际化错误信息
+                                    const errorKey = result.errorCode
+                                        ? `sheetDetail.refreshError.${result.errorCode}`
+                                        : "sheetDetail.refreshFailed";
+                                    Toast.warn(t(errorKey) || t("sheetDetail.refreshFailed"));
+                                }
+                            } catch (e: any) {
+                                Toast.warn(e?.message || t("sheetDetail.refreshFailed"));
+                            } finally {
+                                setIsRefreshing(false);
+                            }
+                        },
+                    },
                     {
                         icon: "pencil-outline",
                         title: t("sheetDetail.editSheetInfo"),

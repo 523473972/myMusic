@@ -3,6 +3,7 @@
  */
 import { ResumeMode, SortType, localPluginPlatform } from "@/constants/commonConst.ts";
 import { IAppConfig } from "@/types/core/config";
+import { IPluginManager } from "@/types/core/pluginManager";
 import { IInjectable } from "@/types/infra";
 import { isSameMediaItem } from "@/utils/mediaUtils";
 import EventEmitter from "eventemitter3";
@@ -178,8 +179,12 @@ class MusicSheetClazz implements IInjectable {
     /**
  * 新建歌单
  * @param title 歌单名称
+ * @param options 可选参数，包含 sourceUrl 和 sourcePluginName
  */
-    async addSheet(title: string) {
+    async addSheet(title: string, options?: {
+        sourceUrl?: string;
+        sourcePluginName?: string;
+    }) {
         const newId = nanoid();
         const musicSheets = getDefaultStore().get(musicSheetsBaseAtom);
 
@@ -192,6 +197,8 @@ class MusicSheetClazz implements IInjectable {
                 coverImg: undefined,
                 worksNum: 0,
                 createAt: Date.now(),
+                sourceUrl: options?.sourceUrl,
+                sourcePluginName: options?.sourcePluginName,
             },
             ...musicSheets.slice(1),
         ];
@@ -462,7 +469,65 @@ class MusicSheetClazz implements IInjectable {
 
     getSheetMeta = storage.getSheetMeta;
 
+    /**
+     * 刷新远程歌单
+     * 从原始来源重新获取歌曲列表并同步更新
+     * @param sheetId 歌单ID
+     * @param pluginManager 插件管理器
+     * @returns 刷新结果，errorCode 用于国际化错误提示
+     */
+    async refreshSheet(
+        sheetId: string,
+        pluginManager: IPluginManager,
+    ): Promise<{ success: boolean; added: number; errorCode?: string; message?: string }> {
+        const musicSheets = getDefaultStore().get(musicSheetsBaseAtom);
+        const sheet = musicSheets.find(it => it.id === sheetId);
 
+        if (!sheet) {
+            return { success: false, added: 0, errorCode: "sheetNotFound" };
+        }
+
+        if (!sheet.sourceUrl || !sheet.sourcePluginName) {
+            return { success: false, added: 0, errorCode: "noRemoteSource" };
+        }
+
+        const plugin = pluginManager.getByName(sheet.sourcePluginName);
+        if (!plugin) {
+            return { success: false, added: 0, errorCode: "pluginNotFound" };
+        }
+
+        try {
+            const result = await plugin.methods.importMusicSheet(sheet.sourceUrl);
+            if (!result || result.length === 0) {
+                return { success: false, added: 0, errorCode: "fetchFailed" };
+            }
+
+            // 获取当前歌单的歌曲
+            const currentMusicList = this.getSortedMusicListBySheetId(sheetId);
+            const currentCount = currentMusicList.length;
+
+            // 添加新歌曲（会自动去重）
+            await this.addMusic(sheetId, result);
+
+            const newCount = this.getSortedMusicListBySheetId(sheetId).length;
+            const addedCount = newCount - currentCount;
+
+            return { success: true, added: addedCount };
+        } catch (e: any) {
+            return { success: false, added: 0, errorCode: "refreshFailed", message: e?.message };
+        }
+    }
+
+    /**
+     * 检查歌单是否支持刷新
+     * @param sheetId 歌单ID
+     * @returns 是否支持刷新
+     */
+    canRefreshSheet(sheetId: string): boolean {
+        const musicSheets = getDefaultStore().get(musicSheetsBaseAtom);
+        const sheet = musicSheets.find(it => it.id === sheetId);
+        return !!(sheet?.sourceUrl && sheet?.sourcePluginName);
+    }
 
     /*********** 远程歌单的收藏逻辑 ***********/
     async starMusicSheet(musicSheet: IMusic.IMusicSheetItem) {
